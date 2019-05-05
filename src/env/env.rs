@@ -44,6 +44,10 @@ fn print_env(null: bool) {
     }
 }
 
+fn split_string(s: &str) -> Vec<String> {
+    s.split_whitespace().map(|x| x.to_owned()).collect::<Vec<String>>()
+}
+
 #[cfg(not(windows))]
 fn build_command(mut args: Vec<String>) -> (String, Vec<String>) {
     (args.remove(0), args)
@@ -63,6 +67,11 @@ pub fn uumain(args: Vec<String>) -> i32 {
             "0",
             "null",
             "end each output line with a 0 byte rather than newline (only valid when printing the environment)",
+        )
+        .optflag(
+            "S",
+            "split-string",
+            "process and split S into separate arguments; used to pass multiple arguments on shebang lines"
         )
         .optopt("f", "file", "read and sets variables from the file (prior to sets/unsets)", "FILE")
         .optopt("u", "unset", "remove variable from the environment", "NAME");
@@ -132,6 +141,20 @@ pub fn uumain(args: Vec<String>) -> i32 {
                         Some(s) => opts.unsets.push(s.to_owned()),
                     }
                 }
+                prefix if prefix.starts_with("--split-string") => {
+                    let length = "--split-string".len();
+                    if prefix.len() == length { // when used like "env --split-string 'foo bar'"
+                        let string = iter.next();
+                        match string {
+                            None => eprintln!("{}: this option requires an argument: {}", NAME, opt),
+                            Some(s) => opts.program.append(&mut split_string(s)) ,
+                        }
+
+                    } else { // everything is passed as one argument (typical for shebang)
+                        opts.program.append(&mut split_string(opt[length..].trim()));
+                    }
+
+                }
 
                 _ => {
                     eprintln!("{}: invalid option \"{}\"", NAME, *opt);
@@ -147,37 +170,55 @@ pub fn uumain(args: Vec<String>) -> i32 {
                 continue;
             }
 
-            let mut chars = opt.chars();
-            chars.next();
-
-            for c in chars {
-                // short versions of options
-                match c {
-                    'i' => opts.ignore_env = true,
-                    '0' => opts.null = true,
-                    'f' => {
-                        let var = iter.next();
-
-                        match var {
-                            None => println!("{}: this option requires an argument: {}", NAME, opt),
-                            Some(s) => opts.files.push(s.to_owned()),
-                        }
+            // split string is handled separately, because it doesn't only operate on characters
+            if opt.starts_with("-S") {
+                if opt.len() == 2 { // when used like "env -S 'foo bar'"
+                    let string = iter.next();
+                    match string {
+                        None => eprintln!("{}: this option requires an argument: {}", NAME, opt),
+                        Some(s) => opts.program.append(&mut split_string(s)) ,
                     }
-                    'u' => {
-                        let var = iter.next();
 
-                        match var {
-                            None => eprintln!("{}: this option requires an argument: {}", NAME, opt),
-                            Some(s) => opts.unsets.push(s.to_owned()),
+                } else { // everything is passed as one argument, typical for shebang
+                    opts.program.append(&mut split_string(opt[2..].trim()));
+                }
+
+            } else {
+
+                let mut chars = opt.chars();
+                chars.next(); // consume dash
+
+                for c in chars {
+                    // short versions of options
+                    match c {
+                        'i' => opts.ignore_env = true,
+                        '0' => opts.null = true,
+                        'f' => {
+                            let var = iter.next();
+
+                            match var {
+                                None => println!("{}: this option requires an argument: {}", NAME, opt),
+                                Some(s) => opts.files.push(s.to_owned()),
+                            }
                         }
-                    }
-                    _ => {
-                        eprintln!("{}: illegal option -- {}", NAME, c);
-                        eprintln!("Type \"{} --help\" for detailed information", NAME);
-                        return 1;
+                        'u' => {
+                            let var = iter.next();
+
+                            match var {
+                                None => eprintln!("{}: this option requires an argument: {}", NAME, opt),
+                                Some(s) => opts.unsets.push(s.to_owned()),
+                            }
+                        }
+                        _ => {
+                            eprintln!("{}: illegal option -- {}", NAME, c);
+                            eprintln!("Type \"{} --help\" for detailed information", NAME);
+                            return 1;
+                        }
                     }
                 }
+
             }
+
         } else {
             // is it a NAME=VALUE like opt ?
             let mut sp = opt.splitn(2, '=');

@@ -134,3 +134,12 @@ fn test_fail_null_with_program() {
     let out = new_ucmd!().arg("--null").arg("cd").fails().stderr;
     assert!(out.contains("cannot specify --null (-0) with command"));
 }
+
+#[test]
+fn test_split_args() {
+    let out_short = new_ucmd!().arg("-S echo -n").arg("foo").succeeds().stdout;
+    assert!(!out_short.contains("\n"));
+
+    let out_long = new_ucmd!().arg("--split-string echo -n").arg("foo").succeeds().stdout;
+    assert!(!out_long.contains("\n"));
+}
